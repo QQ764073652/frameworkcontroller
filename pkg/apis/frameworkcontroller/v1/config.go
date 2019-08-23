@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
+	"regexp"
 )
 
 type Config struct {
@@ -151,20 +152,25 @@ type CompletionCodeInfo struct {
 // ALL fields are optional and default to match ANY, except for explict comments.
 // The pattern is matched if and only if ALL fields are matched.
 type PodPattern struct {
-	NameRegex    string              `yaml:"nameRegex,omitempty"`
-	ReasonRegex  string              `yaml:"reasonRegex,omitempty"`
-	MessageRegex string              `yaml:"messageRegex,omitempty"`
+	NameRegex    Regex               `yaml:"nameRegex,omitempty"`
+	ReasonRegex  Regex               `yaml:"reasonRegex,omitempty"`
+	MessageRegex Regex               `yaml:"messageRegex,omitempty"`
 	Containers   []*ContainerPattern `yaml:"containers,omitempty"`
 }
 
 type ContainerPattern struct {
-	NameRegex    string     `yaml:"nameRegex,omitempty"`
-	ReasonRegex  string     `yaml:"reasonRegex,omitempty"`
-	MessageRegex string     `yaml:"messageRegex,omitempty"`
+	NameRegex    Regex      `yaml:"nameRegex,omitempty"`
+	ReasonRegex  Regex      `yaml:"reasonRegex,omitempty"`
+	MessageRegex Regex      `yaml:"messageRegex,omitempty"`
 	SignalRange  Int32Range `yaml:"signalRange,omitempty"`
 	// It is the range of Container ExitCode.
 	// Default to [1, nil], if it is from Config.
 	CodeRange Int32Range `yaml:"codeRange,omitempty"`
+}
+
+// Represent regex pattern string and nil indicates match ANY.
+type Regex struct {
+	*regexp.Regexp `yaml:",inline"`
 }
 
 // Represent [Min, Max] and nil indicates unlimited.

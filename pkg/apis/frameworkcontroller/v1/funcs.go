@@ -29,6 +29,7 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -76,6 +77,30 @@ func (ir Int32Range) String() string {
 		return fmt.Sprintf("[%v, nil]", *ir.Min)
 	}
 	return fmt.Sprintf("[%v, %v]", *ir.Min, *ir.Max)
+}
+
+func (re *Regex) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	var err error
+	if err = unmarshal(&s); err != nil {
+		return err
+	}
+	if re.Regexp, err = regexp.Compile(s); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (re Regex) MarshalYAML() (interface{}, error) {
+	if re.Regexp == nil {
+		return "", nil
+	} else {
+		return re.String(), nil
+	}
+}
+
+func (re Regex) IsZero() bool {
+	return re.Regexp == nil
 }
 
 func GetConfigMapName(frameworkName string) string {
