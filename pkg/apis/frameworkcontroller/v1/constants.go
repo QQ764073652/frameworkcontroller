@@ -27,6 +27,7 @@ import (
 	"github.com/microsoft/frameworkcontroller/pkg/common"
 	core "k8s.io/api/core/v1"
 	"os"
+	"time"
 )
 
 func init() {
@@ -153,10 +154,10 @@ const (
 	// -3XX: Unknown Error
 )
 
-var CompletionCodeInfoList = []*CompletionCodeInfo{}
-var CompletionCodeInfoMap = map[CompletionCode]*CompletionCodeInfo{}
+var completionCodeInfoList = []*CompletionCodeInfo{}
+var completionCodeInfoMap = map[CompletionCode]*CompletionCodeInfo{}
 
-var CompletionCodeInfoContainerUnrecognizedFailed = &CompletionCodeInfo{
+var completionCodeInfoContainerUnrecognizedFailed = &CompletionCodeInfo{
 	Phrase: "ContainerUnrecognizedFailed",
 	Type:   CompletionType{CompletionTypeNameFailed, []CompletionTypeAttribute{}},
 }
@@ -266,7 +267,7 @@ func initCompletionCodeInfos() {
 
 func AppendCompletionCodeInfos(codeInfos []*CompletionCodeInfo) {
 	for _, codeInfo := range codeInfos {
-		if existingCodeInfo, ok := CompletionCodeInfoMap[*codeInfo.Code]; ok {
+		if existingCodeInfo, ok := completionCodeInfoMap[*codeInfo.Code]; ok {
 			// Unreachable
 			panic(fmt.Errorf(
 				"Failed to append CompletionCodeInfo due to duplicated CompletionCode:"+
@@ -274,7 +275,174 @@ func AppendCompletionCodeInfos(codeInfos []*CompletionCodeInfo) {
 				common.ToYaml(existingCodeInfo), common.ToYaml(codeInfo)))
 		}
 
-		CompletionCodeInfoList = append(CompletionCodeInfoList, codeInfo)
-		CompletionCodeInfoMap[*codeInfo.Code] = codeInfo
+		completionCodeInfoList = append(completionCodeInfoList, codeInfo)
+		completionCodeInfoMap[*codeInfo.Code] = codeInfo
+	}
+}
+
+type PodMatchResult struct {
+	CodeInfo    *CompletionCodeInfo
+	Diagnostics string
+}
+
+func (r PodMatchResult) NewCompletionStatus(diagnostics string) *CompletionStatus {
+	return &CompletionStatus{
+		Code:        *r.CodeInfo.Code,
+		Phrase:      r.CodeInfo.Phrase,
+		Type:        r.CodeInfo.Type,
+		Diagnostics: diagnostics,
+	}
+}
+
+// Match ANY CompletionCodeInfo
+func MatchCompletionCodeInfos(pod *core.Pod) PodMatchResult {
+	for _, codeInfo := range completionCodeInfoList {
+		for _, podPattern := range codeInfo.PodPatterns {
+			if diag := matchPodPattern(pod, podPattern); diag != nil {
+				return PodMatchResult{codeInfo, *diag}
+			}
+		}
+	}
+
+	// ALL CompletionCodeInfos cannot be matched, fall back to unmatched result.
+	return generatePodUnmatchedResult(pod)
+}
+
+// Match ENTIRE PodPattern
+func matchPodPattern(pod *core.Pod, podPattern *PodPattern) *string {
+	diag := "PodPattern matched: "
+
+	if ms := podPattern.NameRegex.FindString(pod.Name); ms != nil {
+		if !podPattern.NameRegex.IsZero() {
+			diag += "[Name: " + *ms + "]"
+		}
+	} else {
+		return nil
+	}
+	if ms := podPattern.ReasonRegex.FindString(pod.Status.Reason); ms != nil {
+		if !podPattern.ReasonRegex.IsZero() {
+			diag += "[Reason: " + *ms + "]"
+		}
+	} else {
+		return nil
+	}
+	if ms := podPattern.MessageRegex.FindString(pod.Status.Message); ms != nil {
+		if !podPattern.MessageRegex.IsZero() {
+			diag += "[Message: " + *ms + "]"
+		}
+	} else {
+		return nil
+	}
+
+	for _, containerPattern := range podPattern.Containers {
+		if ms := matchContainers(pod, containerPattern); ms != nil {
+			if *ms != "" {
+				diag += "[Container: " + *ms + "]"
+			}
+		} else {
+			return nil
+		}
+	}
+
+	return &diag
+}
+
+// Match ANY Container
+func matchContainers(pod *core.Pod, containerPattern *ContainerPattern) *string {
+	for _, container := range GetAllContainerStatuses(pod) {
+		if ms := matchContainerPattern(container, containerPattern); ms != nil {
+			return ms
+		}
+	}
+
+	return nil
+}
+
+// Match ENTIRE ContainerPattern
+func matchContainerPattern(
+	container core.ContainerStatus, containerPattern *ContainerPattern) *string {
+	diag := ""
+	term := container.State.Terminated
+
+	if ms := containerPattern.NameRegex.FindString(container.Name); ms != nil {
+		if !containerPattern.NameRegex.IsZero() {
+			diag += "(Name: " + *ms + ")"
+		}
+	} else {
+		return nil
+	}
+	if ms := containerPattern.ReasonRegex.FindString(term.Reason); ms != nil {
+		if !containerPattern.ReasonRegex.IsZero() {
+			diag += "(Reason: " + *ms + ")"
+		}
+	} else {
+		return nil
+	}
+	if ms := containerPattern.MessageRegex.FindString(term.Message); ms != nil {
+		if !containerPattern.MessageRegex.IsZero() {
+			// Escape it in case multiple lines.
+			diag += "(Message: " + common.ToJson(*ms) + ")"
+		}
+	} else {
+		return nil
+	}
+
+	if containerPattern.SignalRange.Contains(term.Signal) {
+		if !containerPattern.SignalRange.IsZero() {
+			diag += "(Signal: " + fmt.Sprint(term.Signal) + ")"
+		}
+	} else {
+		return nil
+	}
+	if containerPattern.CodeRange.Contains(term.ExitCode) {
+		if !containerPattern.CodeRange.IsZero() {
+			diag += "(ExitCode: " + fmt.Sprint(term.ExitCode) + ")"
+		}
+	} else {
+		return nil
+	}
+
+	return &diag
+}
+
+func generatePodUnmatchedResult(pod *core.Pod) PodMatchResult {
+	// Take the last failed Container ExitCode as CompletionCode and full failure
+	// info as Diagnostics.
+	lastContainerExitCode := common.NilInt32()
+	lastContainerCompletionTime := time.Time{}
+	diag := fmt.Sprintf(
+		"[Reason: %v, Message: %v]",
+		pod.Status.Reason, pod.Status.Message)
+
+	for _, containerStatus := range GetAllContainerStatuses(pod) {
+		terminated := containerStatus.State.Terminated
+		if terminated != nil && terminated.ExitCode != 0 {
+			diag += fmt.Sprintf(
+				"[Container: %v, ExitCode: %v, Signal: %v, Reason: %v, Message: %v]",
+				containerStatus.Name, terminated.ExitCode, terminated.Signal,
+				terminated.Reason, common.ToJson(terminated.Message))
+
+			if lastContainerExitCode == nil ||
+				lastContainerCompletionTime.Before(terminated.FinishedAt.Time) {
+				lastContainerExitCode = &terminated.ExitCode
+				lastContainerCompletionTime = terminated.FinishedAt.Time
+			}
+		}
+	}
+
+	if lastContainerExitCode == nil {
+		return PodMatchResult{
+			CodeInfo:    completionCodeInfoMap[CompletionCodePodFailedWithoutFailedContainer],
+			Diagnostics: diag,
+		}
+	} else {
+		return PodMatchResult{
+			CodeInfo: &CompletionCodeInfo{
+				Code:   (*CompletionCode)(lastContainerExitCode),
+				Phrase: completionCodeInfoContainerUnrecognizedFailed.Phrase,
+				Type:   completionCodeInfoContainerUnrecognizedFailed.Type,
+			},
+			Diagnostics: diag,
+		}
 	}
 }

@@ -351,6 +351,9 @@ type CompletionStatus struct {
 	Type   CompletionType   `json:"type"`
 
 	// It is the summarized diagnostic information of the completion.
+	// Such as it will include the matched Pod fields specified in the PodPattern,
+	// if the CompletionCodeInfo is generated from the PodPattern
+	// matching.
 	// For detailed and structured diagnostic information, check its outer
 	// embedding type.
 	Diagnostics string `json:"diagnostics"`

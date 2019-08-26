@@ -105,8 +105,8 @@ type Config struct {
 	// Notes:
 	// 1. It will only be used for Failed Pods.
 	// 2. Before it is used, it will be appended to the predefined internal
-	//    CompletionCodeInfoList and if multiple CompletionCodes are matched in
-	//    the final CompletionCodeInfoList, prefer to pick the first one.
+	//    completionCodeInfoList and if multiple CompletionCodes are matched in
+	//    the final completionCodeInfoList, prefer to pick the first one.
 	// 3. Non-positive CompletionCode must be universally unique and comparable
 	//    since it can only be generated from FrameworkController, but positive
 	//    CompletionCode may not since it may also be generated from Container
@@ -169,6 +169,7 @@ type ContainerPattern struct {
 }
 
 // Represent regex pattern string and nil indicates match ANY.
+// See https://github.com/google/re2/wiki/Syntax
 type Regex struct {
 	*regexp.Regexp `yaml:",inline"`
 }

@@ -47,7 +47,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 )
@@ -1279,46 +1278,11 @@ func (c *FrameworkController) syncTaskState(
 						ci.CompletionCodeSucceeded.NewCompletionStatus(diag))
 					return nil
 				} else if pod.Status.Phase == core.PodFailed {
-					// All Container names in a Pod must be different, so we can still identify
-					// a Container even after the InitContainers is merged with the AppContainers.
-					allContainerStatuses := append(append([]core.ContainerStatus{},
-						pod.Status.InitContainerStatuses...),
-						pod.Status.ContainerStatuses...)
-
-					lastContainerExitCode := common.NilInt32()
-					lastContainerCompletionTime := time.Time{}
-					allContainerDiags := []string{}
-					for _, containerStatus := range allContainerStatuses {
-						terminated := containerStatus.State.Terminated
-						if terminated != nil && terminated.ExitCode != 0 {
-							allContainerDiags = append(allContainerDiags, fmt.Sprintf(
-								"[Container: %v, ExitCode: %v, Signal: %v, Reason: %v, Message: %v]",
-								containerStatus.Name, terminated.ExitCode, terminated.Signal,
-								terminated.Reason, common.ToJson(terminated.Message)))
-
-							if lastContainerExitCode == nil ||
-								lastContainerCompletionTime.Before(terminated.FinishedAt.Time) {
-								lastContainerExitCode = &terminated.ExitCode
-								lastContainerCompletionTime = terminated.FinishedAt.Time
-							}
-						}
-					}
-
-					if lastContainerExitCode == nil {
-						diag := fmt.Sprintf(
-							"Pod failed without any non-zero container exit code, maybe " +
-								"stopped by the system")
-						klog.Warningf(logPfx + diag)
-						c.completeTaskAttempt(f, taskRoleName, taskIndex, false,
-							ci.CompletionCodePodFailedWithoutFailedContainer.NewCompletionStatus(diag))
-					} else {
-						diag := fmt.Sprintf(
-							"Pod failed with non-zero container exit code: %v",
-							strings.Join(allContainerDiags, ", "))
-						klog.Infof(logPfx + diag)
-						c.completeTaskAttempt(f, taskRoleName, taskIndex, false,
-							ci.CompletionCode(*lastContainerExitCode).NewCompletionStatus(diag))
-					}
+					result := ci.MatchCompletionCodeInfos(pod)
+					diag := fmt.Sprintf("Pod failed: %v", result.Diagnostics)
+					klog.Infof(logPfx + diag)
+					c.completeTaskAttempt(f, taskRoleName, taskIndex, false,
+						result.NewCompletionStatus(diag))
 					return nil
 				} else {
 					return fmt.Errorf(logPfx+
@@ -1468,8 +1432,9 @@ func (c *FrameworkController) syncTaskState(
 					failedTaskCount, minFailedTaskCount, taskRoleName,
 					taskRoleName, taskIndex, taskStatus.AttemptStatus.CompletionStatus.Diagnostics)
 				klog.Infof(logPfx + diag)
+				// TODOC
 				c.completeFrameworkAttempt(f, false,
-					taskStatus.AttemptStatus.CompletionStatus.Code.NewCompletionStatus(diag))
+					taskStatus.AttemptStatus.CompletionStatus)
 				return nil
 			}
 		}

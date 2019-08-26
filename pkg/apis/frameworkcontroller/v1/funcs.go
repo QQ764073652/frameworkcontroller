@@ -79,6 +79,10 @@ func (ir Int32Range) String() string {
 	return fmt.Sprintf("[%v, %v]", *ir.Min, *ir.Max)
 }
 
+func (ir Int32Range) IsZero() bool {
+	return ir.Min == nil && ir.Max == nil
+}
+
 func (re *Regex) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var s string
 	var err error
@@ -94,13 +98,23 @@ func (re *Regex) UnmarshalYAML(unmarshal func(interface{}) error) error {
 func (re Regex) MarshalYAML() (interface{}, error) {
 	if re.Regexp == nil {
 		return "", nil
-	} else {
-		return re.String(), nil
 	}
+	return re.String(), nil
 }
 
 func (re Regex) IsZero() bool {
 	return re.Regexp == nil
+}
+
+func (re Regex) FindString(s string) *string {
+	if re.IsZero() {
+		// Default to match entire string
+		return &s
+	}
+	if loc := re.Regexp.FindStringIndex(s); loc != nil {
+		return common.PtrString(s[loc[0]:loc[1]])
+	}
+	return nil
 }
 
 func GetConfigMapName(frameworkName string) string {
@@ -175,6 +189,14 @@ func GetPodSnapshotLogTail(pod *core.Pod) string {
 		pod.SetGroupVersionKind(PodGroupVersionKind)
 	}
 	return getObjectSnapshotLogTail(pod)
+}
+
+func GetAllContainerStatuses(pod *core.Pod) []core.ContainerStatus {
+	// All Container names in a Pod must be different, so we can still identify
+	// a Container even after the InitContainers is merged with the AppContainers.
+	return append(append([]core.ContainerStatus{},
+		pod.Status.InitContainerStatuses...),
+		pod.Status.ContainerStatuses...)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -564,11 +586,9 @@ func (f *Framework) NewTaskAttemptStatus(
 	}
 }
 
+// The CompletionCode should only be the predefined ones.
 func (cc CompletionCode) NewCompletionStatus(diagnostics string) *CompletionStatus {
-	cci, exists := CompletionCodeInfoMap[cc]
-	if !exists {
-		cci = CompletionCodeInfoContainerUnrecognizedFailed
-	}
+	cci := completionCodeInfoMap[cc]
 	return &CompletionStatus{
 		Code:        cc,
 		Phrase:      cci.Phrase,
