@@ -1446,8 +1446,8 @@ func (c *FrameworkController) syncTaskState(
 			failedTaskCount := taskRoleStatus.GetTaskCount((*ci.TaskStatus).IsFailed)
 			if failedTaskCount >= minFailedTaskCount {
 				msg := fmt.Sprintf(
-					"FailedTaskCount %v has reached MinFailedTaskCount %v in TaskRole [%v]",
-					failedTaskCount, minFailedTaskCount, taskRoleName)
+					"FailedTaskCount %v has reached MinFailedTaskCount %v in the TaskRole",
+					failedTaskCount, minFailedTaskCount)
 				klog.Infof(logPfx + msg)
 				c.completeFrameworkAttempt(f, false,
 					&ci.FrameworkAttemptCompletionStatus{
@@ -1467,8 +1467,8 @@ func (c *FrameworkController) syncTaskState(
 			succeededTaskCount := taskRoleStatus.GetTaskCount((*ci.TaskStatus).IsSucceeded)
 			if succeededTaskCount >= minSucceededTaskCount {
 				msg := fmt.Sprintf(
-					"SucceededTaskCount %v has reached MinSucceededTaskCount %v in TaskRole [%v]",
-					succeededTaskCount, minSucceededTaskCount, taskRoleName)
+					"SucceededTaskCount %v has reached MinSucceededTaskCount %v in the TaskRole",
+					succeededTaskCount, minSucceededTaskCount)
 				klog.Infof(logPfx + msg)
 				c.completeFrameworkAttempt(f, false,
 					ci.CompletionCodeSucceeded.NewFrameworkAttemptCompletionStatus(
