@@ -116,21 +116,25 @@ type Config struct {
 	PodFailureSpec []*CompletionCodeInfo `yaml:"podFailureSpec"`
 }
 
+// +k8s:deepcopy-gen=false
 type LogObjectSnapshot struct {
 	Framework LogFrameworkSnapshot `yaml:"framework"`
 	Pod       LogPodSnapshot       `yaml:"pod"`
 }
 
+// +k8s:deepcopy-gen=false
 type LogFrameworkSnapshot struct {
 	OnTaskRetry         *bool `yaml:"onTaskRetry"`
 	OnFrameworkRetry    *bool `yaml:"onFrameworkRetry"`
 	OnFrameworkDeletion *bool `yaml:"onFrameworkDeletion"`
 }
 
+// +k8s:deepcopy-gen=false
 type LogPodSnapshot struct {
 	OnPodDeletion *bool `yaml:"onPodDeletion"`
 }
 
+// +k8s:deepcopy-gen=false
 type CompletionCodeInfo struct {
 	// Must not duplicate with other codes.
 	// It should not be within [-999, 0] and [200, 219], if it is from Config.
@@ -149,6 +153,7 @@ type CompletionCodeInfo struct {
 	PodPatterns []*PodPattern `yaml:"podPatterns,omitempty"`
 }
 
+// +k8s:deepcopy-gen=false
 // Used to match against the corresponding fields in Pod object.
 // ALL fields are optional and default to match ANY, except for explict comments.
 // The pattern is matched if and only if ALL fields are matched.
@@ -159,6 +164,7 @@ type PodPattern struct {
 	Containers   []*ContainerPattern `yaml:"containers,omitempty"`
 }
 
+// +k8s:deepcopy-gen=false
 type ContainerPattern struct {
 	NameRegex    Regex      `yaml:"nameRegex,omitempty"`
 	ReasonRegex  Regex      `yaml:"reasonRegex,omitempty"`
@@ -169,12 +175,14 @@ type ContainerPattern struct {
 	CodeRange Int32Range `yaml:"codeRange,omitempty"`
 }
 
+// +k8s:deepcopy-gen=false
 // Represent regex pattern string and nil indicates match ANY.
 // See https://github.com/google/re2/wiki/Syntax
 type Regex struct {
 	*regexp.Regexp `yaml:",inline"`
 }
 
+// +k8s:deepcopy-gen=false
 // Represent [Min, Max] and nil indicates unlimited.
 type Int32Range struct {
 	Min *int32 `yaml:"min,omitempty"`

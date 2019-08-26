@@ -641,6 +641,7 @@ func (cs *CompletionStatus) String() string {
 		cs.Code, cs.Phrase, cs.Type, cs.Diagnostics)
 }
 
+// +k8s:deepcopy-gen=false
 type RetryDecision struct {
 	ShouldRetry bool
 	// Whether the retry should be counted into AccountableRetriedCount
