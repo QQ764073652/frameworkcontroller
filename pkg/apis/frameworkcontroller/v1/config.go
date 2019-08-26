@@ -32,6 +32,7 @@ import (
 	"regexp"
 )
 
+// +k8s:deepcopy-gen=false
 type Config struct {
 	// KubeApiServerAddress is default to ${KUBE_APISERVER_ADDRESS}.
 	// KubeConfigFilePath is default to ${KUBECONFIG} then falls back to ${HOME}/.kube/config.
