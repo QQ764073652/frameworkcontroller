@@ -380,9 +380,9 @@ type TaskAttemptCompletionStatus struct {
 }
 
 type CompletionPolicyTriggerStatus struct {
-	Message      string `json:"message,omitempty"`
-	TaskRoleName string `json:"taskRoleName,omitempty"`
-	TaskIndex    int32  `json:"taskIndex,omitempty"`
+	Message      string `json:"message"`
+	TaskRoleName string `json:"taskRoleName"`
+	TaskIndex    int32  `json:"taskIndex"`
 }
 
 type FrameworkAttemptCompletionStatus struct {
