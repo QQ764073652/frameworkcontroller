@@ -199,6 +199,28 @@ func GetAllContainerStatuses(pod *core.Pod) []core.ContainerStatus {
 		pod.Status.ContainerStatuses...)
 }
 
+func ExtractPodCompletionStatus(pod *core.Pod) *PodCompletionStatus {
+	pcs := &PodCompletionStatus{
+		Reason:  pod.Status.Reason,
+		Message: pod.Status.Message,
+	}
+
+	for _, containerStatus := range GetAllContainerStatuses(pod) {
+		term := containerStatus.State.Terminated
+		pcs.Containers = append(pcs.Containers,
+			&ContainerCompletionStatus{
+				Name:    containerStatus.Name,
+				Reason:  term.Reason,
+				Message: term.Message,
+				Signal:  term.Signal,
+				Code:    term.ExitCode,
+			},
+		)
+	}
+
+	return pcs
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////
 // Interfaces
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -587,13 +609,29 @@ func (f *Framework) NewTaskAttemptStatus(
 }
 
 // The CompletionCode should only be the predefined ones.
-func (cc CompletionCode) NewCompletionStatus(diagnostics string) *CompletionStatus {
+func (cc CompletionCode) newCompletionStatus(diagnostics string) *CompletionStatus {
 	cci := completionCodeInfoMap[cc]
 	return &CompletionStatus{
 		Code:        cc,
 		Phrase:      cci.Phrase,
 		Type:        cci.Type,
 		Diagnostics: diagnostics,
+	}
+}
+
+func (cc CompletionCode) NewTaskAttemptCompletionStatus(
+	diagnostics string, pcs *PodCompletionStatus) *TaskAttemptCompletionStatus {
+	return &TaskAttemptCompletionStatus{
+		CompletionStatus: cc.newCompletionStatus(diagnostics),
+		Pod:              pcs,
+	}
+}
+
+func (cc CompletionCode) NewFrameworkAttemptCompletionStatus(
+	diagnostics string, cpts *CompletionPolicyTriggerStatus) *FrameworkAttemptCompletionStatus {
+	return &FrameworkAttemptCompletionStatus{
+		CompletionStatus: cc.newCompletionStatus(diagnostics),
+		Trigger:          cpts,
 	}
 }
 

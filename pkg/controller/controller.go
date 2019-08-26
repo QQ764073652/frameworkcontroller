@@ -750,7 +750,8 @@ func (c *FrameworkController) syncFrameworkState(f *ci.Framework) (err error) {
 					return err
 				}
 
-				c.completeFrameworkAttempt(f, true, code.NewCompletionStatus(diag))
+				c.completeFrameworkAttempt(f, true,
+					code.NewFrameworkAttemptCompletionStatus(diag, nil))
 				return nil
 			}
 
@@ -759,7 +760,8 @@ func (c *FrameworkController) syncFrameworkState(f *ci.Framework) (err error) {
 					diag := fmt.Sprintf("ConfigMap was deleted by others")
 					klog.Warningf(logPfx + diag)
 					c.completeFrameworkAttempt(f, true,
-						ci.CompletionCodeConfigMapExternalDeleted.NewCompletionStatus(diag))
+						ci.CompletionCodeConfigMapExternalDeleted.
+							NewFrameworkAttemptCompletionStatus(diag, nil))
 				} else {
 					c.completeFrameworkAttempt(f, true, nil)
 				}
@@ -800,7 +802,8 @@ func (c *FrameworkController) syncFrameworkState(f *ci.Framework) (err error) {
 					diag := fmt.Sprintf("ConfigMap is being deleted by others")
 					klog.Warningf(logPfx + diag)
 					f.Status.AttemptStatus.CompletionStatus =
-						ci.CompletionCodeConfigMapExternalDeleted.NewCompletionStatus(diag)
+						ci.CompletionCodeConfigMapExternalDeleted.
+							NewFrameworkAttemptCompletionStatus(diag, nil)
 				}
 
 				f.TransitionFrameworkState(ci.FrameworkAttemptDeleting)
@@ -817,7 +820,7 @@ func (c *FrameworkController) syncFrameworkState(f *ci.Framework) (err error) {
 		// attemptToRetryFramework
 		retryDecision := f.Spec.RetryPolicy.ShouldRetry(
 			f.Status.RetryPolicyStatus,
-			f.Status.AttemptStatus.CompletionStatus,
+			f.Status.AttemptStatus.CompletionStatus.CompletionStatus,
 			*c.cConfig.FrameworkMinRetryDelaySecForTransientConflictFailed,
 			*c.cConfig.FrameworkMaxRetryDelaySecForTransientConflictFailed)
 
@@ -896,7 +899,8 @@ func (c *FrameworkController) syncFrameworkState(f *ci.Framework) (err error) {
 			}
 
 			c.completeFrameworkAttempt(f, true,
-				ci.CompletionCodeStopFrameworkRequested.NewCompletionStatus(diag))
+				ci.CompletionCodeStopFrameworkRequested.
+					NewFrameworkAttemptCompletionStatus(diag, nil))
 			return nil
 		}
 
@@ -935,7 +939,8 @@ func (c *FrameworkController) syncFrameworkState(f *ci.Framework) (err error) {
 				diag := fmt.Sprintf("User has requested to stop the Framework")
 				klog.Infof(logPfx + diag)
 				c.completeFrameworkAttempt(f, false,
-					ci.CompletionCodeStopFrameworkRequested.NewCompletionStatus(diag))
+					ci.CompletionCodeStopFrameworkRequested.
+						NewFrameworkAttemptCompletionStatus(diag, nil))
 			}
 		}
 
@@ -1202,7 +1207,8 @@ func (c *FrameworkController) syncTaskState(
 				}
 
 				c.completeTaskAttempt(f, taskRoleName, taskIndex, true,
-					ci.CompletionCodePodCreationTimeout.NewCompletionStatus(diag))
+					ci.CompletionCodePodCreationTimeout.
+						NewTaskAttemptCompletionStatus(diag, nil))
 				return nil
 			}
 
@@ -1211,7 +1217,8 @@ func (c *FrameworkController) syncTaskState(
 					diag := fmt.Sprintf("Pod was deleted by others")
 					klog.Warningf(logPfx + diag)
 					c.completeTaskAttempt(f, taskRoleName, taskIndex, true,
-						ci.CompletionCodePodExternalDeleted.NewCompletionStatus(diag))
+						ci.CompletionCodePodExternalDeleted.
+							NewTaskAttemptCompletionStatus(diag, nil))
 				} else {
 					c.completeTaskAttempt(f, taskRoleName, taskIndex, true, nil)
 				}
@@ -1275,14 +1282,24 @@ func (c *FrameworkController) syncTaskState(
 					diag := fmt.Sprintf("Pod succeeded")
 					klog.Infof(logPfx + diag)
 					c.completeTaskAttempt(f, taskRoleName, taskIndex, false,
-						ci.CompletionCodeSucceeded.NewCompletionStatus(diag))
+						ci.CompletionCodeSucceeded.NewTaskAttemptCompletionStatus(
+							diag, ci.ExtractPodCompletionStatus(pod)))
 					return nil
 				} else if pod.Status.Phase == core.PodFailed {
 					result := ci.MatchCompletionCodeInfos(pod)
 					diag := fmt.Sprintf("Pod failed: %v", result.Diagnostics)
 					klog.Infof(logPfx + diag)
 					c.completeTaskAttempt(f, taskRoleName, taskIndex, false,
-						result.NewCompletionStatus(diag))
+						&ci.TaskAttemptCompletionStatus{
+							CompletionStatus: &ci.CompletionStatus{
+								Code:        *result.CodeInfo.Code,
+								Phrase:      result.CodeInfo.Phrase,
+								Type:        result.CodeInfo.Type,
+								Diagnostics: diag,
+							},
+							Pod: ci.ExtractPodCompletionStatus(pod),
+						},
+					)
 					return nil
 				} else {
 					return fmt.Errorf(logPfx+
@@ -1293,7 +1310,8 @@ func (c *FrameworkController) syncTaskState(
 					diag := fmt.Sprintf("Pod is being deleted by others")
 					klog.Warningf(logPfx + diag)
 					taskStatus.AttemptStatus.CompletionStatus =
-						ci.CompletionCodePodExternalDeleted.NewCompletionStatus(diag)
+						ci.CompletionCodePodExternalDeleted.
+							NewTaskAttemptCompletionStatus(diag, nil)
 				}
 
 				f.TransitionTaskState(taskRoleName, taskIndex, ci.TaskAttemptDeleting)
@@ -1309,7 +1327,7 @@ func (c *FrameworkController) syncTaskState(
 		// attemptToRetryTask
 		retryDecision := taskSpec.RetryPolicy.ShouldRetry(
 			taskStatus.RetryPolicyStatus,
-			taskStatus.AttemptStatus.CompletionStatus,
+			taskStatus.AttemptStatus.CompletionStatus.CompletionStatus,
 			0, 0)
 
 		if taskStatus.RetryPolicyStatus.RetryDelaySec == nil {
@@ -1385,7 +1403,8 @@ func (c *FrameworkController) syncTaskState(
 				}
 
 				c.completeTaskAttempt(f, taskRoleName, taskIndex, true,
-					ci.CompletionCodePodSpecInvalid.NewCompletionStatus(diag))
+					ci.CompletionCodePodSpecInvalid.
+						NewTaskAttemptCompletionStatus(diag, nil))
 				return nil
 			} else {
 				return err
@@ -1426,15 +1445,20 @@ func (c *FrameworkController) syncTaskState(
 		if taskStatus.IsFailed() && minFailedTaskCount != ci.UnlimitedValue {
 			failedTaskCount := taskRoleStatus.GetTaskCount((*ci.TaskStatus).IsFailed)
 			if failedTaskCount >= minFailedTaskCount {
-				diag := fmt.Sprintf(
-					"FailedTaskCount %v has reached MinFailedTaskCount %v in TaskRole [%v]: "+
-						"Triggered by Task [%v][%v]: Diagnostics: %v",
-					failedTaskCount, minFailedTaskCount, taskRoleName,
-					taskRoleName, taskIndex, taskStatus.AttemptStatus.CompletionStatus.Diagnostics)
-				klog.Infof(logPfx + diag)
-				// TODOC
+				msg := fmt.Sprintf(
+					"FailedTaskCount %v has reached MinFailedTaskCount %v in TaskRole [%v]",
+					failedTaskCount, minFailedTaskCount, taskRoleName)
+				klog.Infof(logPfx + msg)
 				c.completeFrameworkAttempt(f, false,
-					taskStatus.AttemptStatus.CompletionStatus)
+					&ci.FrameworkAttemptCompletionStatus{
+						CompletionStatus: taskStatus.AttemptStatus.CompletionStatus.CompletionStatus,
+						Trigger: &ci.CompletionPolicyTriggerStatus{
+							Message:      msg,
+							TaskRoleName: taskRoleName,
+							TaskIndex:    taskIndex,
+						},
+					},
+				)
 				return nil
 			}
 		}
@@ -1442,14 +1466,20 @@ func (c *FrameworkController) syncTaskState(
 		if taskStatus.IsSucceeded() && minSucceededTaskCount != ci.UnlimitedValue {
 			succeededTaskCount := taskRoleStatus.GetTaskCount((*ci.TaskStatus).IsSucceeded)
 			if succeededTaskCount >= minSucceededTaskCount {
-				diag := fmt.Sprintf(
-					"SucceededTaskCount %v has reached MinSucceededTaskCount %v in TaskRole [%v]: "+
-						"Triggered by Task [%v][%v]: Diagnostics: %v",
-					succeededTaskCount, minSucceededTaskCount, taskRoleName,
-					taskRoleName, taskIndex, taskStatus.AttemptStatus.CompletionStatus.Diagnostics)
-				klog.Infof(logPfx + diag)
+				msg := fmt.Sprintf(
+					"SucceededTaskCount %v has reached MinSucceededTaskCount %v in TaskRole [%v]",
+					succeededTaskCount, minSucceededTaskCount, taskRoleName)
+				klog.Infof(logPfx + msg)
 				c.completeFrameworkAttempt(f, false,
-					ci.CompletionCodeSucceeded.NewCompletionStatus(diag))
+					ci.CompletionCodeSucceeded.NewFrameworkAttemptCompletionStatus(
+						taskStatus.AttemptStatus.CompletionStatus.Diagnostics,
+						&ci.CompletionPolicyTriggerStatus{
+							Message:      msg,
+							TaskRoleName: taskRoleName,
+							TaskIndex:    taskIndex,
+						},
+					),
+				)
 				return nil
 			}
 		}
@@ -1457,16 +1487,22 @@ func (c *FrameworkController) syncTaskState(
 		if f.AreAllTasksCompleted() {
 			totalTaskCount := f.GetTaskCount(nil)
 			failedTaskCount := f.GetTaskCount((*ci.TaskStatus).IsFailed)
-			diag := fmt.Sprintf(
+			msg := fmt.Sprintf(
 				"All Tasks are completed and no user specified conditions in "+
 					"FrameworkAttemptCompletionPolicy have ever been triggered: "+
-					"TotalTaskCount: %v, FailedTaskCount: %v: "+
-					"Triggered by Task [%v][%v]: Diagnostics: %v",
-				totalTaskCount, failedTaskCount,
-				taskRoleName, taskIndex, taskStatus.AttemptStatus.CompletionStatus.Diagnostics)
-			klog.Infof(logPfx + diag)
+					"TotalTaskCount: %v, FailedTaskCount: %v",
+				totalTaskCount, failedTaskCount)
+			klog.Infof(logPfx + msg)
 			c.completeFrameworkAttempt(f, false,
-				ci.CompletionCodeSucceeded.NewCompletionStatus(diag))
+				ci.CompletionCodeSucceeded.NewFrameworkAttemptCompletionStatus(
+					taskStatus.AttemptStatus.CompletionStatus.Diagnostics,
+					&ci.CompletionPolicyTriggerStatus{
+						Message:      msg,
+						TaskRoleName: taskRoleName,
+						TaskIndex:    taskIndex,
+					},
+				),
+			)
 			return nil
 		}
 
@@ -1607,7 +1643,7 @@ func (c *FrameworkController) createPod(
 
 func (c *FrameworkController) completeTaskAttempt(
 	f *ci.Framework, taskRoleName string, taskIndex int32,
-	force bool, completionStatus *ci.CompletionStatus) {
+	force bool, completionStatus *ci.TaskAttemptCompletionStatus) {
 	logPfx := fmt.Sprintf(
 		"[%v][%v][%v]: completeTaskAttempt: force: %v: ",
 		f.Key(), taskRoleName, taskIndex, force)
@@ -1647,7 +1683,7 @@ func (c *FrameworkController) completeTaskAttempt(
 }
 
 func (c *FrameworkController) completeFrameworkAttempt(
-	f *ci.Framework, force bool, completionStatus *ci.CompletionStatus) {
+	f *ci.Framework, force bool, completionStatus *ci.FrameworkAttemptCompletionStatus) {
 	logPfx := fmt.Sprintf(
 		"[%v]: completeFrameworkAttempt: force: %v: ",
 		f.Key(), force)
@@ -1662,7 +1698,8 @@ func (c *FrameworkController) completeFrameworkAttempt(
 			if taskStatus.AttemptStatus.CompletionStatus == nil {
 				taskStatus.AttemptStatus.CompletionStatus =
 					ci.CompletionCodeFrameworkAttemptCompletion.
-						NewCompletionStatus("Stop to complete current FrameworkAttempt")
+						NewTaskAttemptCompletionStatus(
+							"Stop to complete current FrameworkAttempt", nil)
 			}
 		}
 	}

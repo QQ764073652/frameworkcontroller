@@ -27,6 +27,7 @@ import (
 	"github.com/microsoft/frameworkcontroller/pkg/common"
 	core "k8s.io/api/core/v1"
 	"os"
+	"reflect"
 	"time"
 )
 
@@ -285,13 +286,9 @@ type PodMatchResult struct {
 	Diagnostics string
 }
 
-func (r PodMatchResult) NewCompletionStatus(diagnostics string) *CompletionStatus {
-	return &CompletionStatus{
-		Code:        *r.CodeInfo.Code,
-		Phrase:      r.CodeInfo.Phrase,
-		Type:        r.CodeInfo.Type,
-		Diagnostics: diagnostics,
-	}
+type PodMatchDiagnostics struct {
+	Name                string `json:"name,omitempty"`
+	PodCompletionStatus `json:",inline"`
 }
 
 // Match ANY CompletionCodeInfo
@@ -310,48 +307,52 @@ func MatchCompletionCodeInfos(pod *core.Pod) PodMatchResult {
 
 // Match ENTIRE PodPattern
 func matchPodPattern(pod *core.Pod, podPattern *PodPattern) *string {
-	diag := "PodPattern matched: "
+	matchedPod := &PodMatchDiagnostics{}
 
 	if ms := podPattern.NameRegex.FindString(pod.Name); ms != nil {
 		if !podPattern.NameRegex.IsZero() {
-			diag += "[Name: " + *ms + "]"
+			matchedPod.Name = *ms
 		}
 	} else {
 		return nil
 	}
 	if ms := podPattern.ReasonRegex.FindString(pod.Status.Reason); ms != nil {
 		if !podPattern.ReasonRegex.IsZero() {
-			diag += "[Reason: " + *ms + "]"
+			matchedPod.Reason = *ms
 		}
 	} else {
 		return nil
 	}
 	if ms := podPattern.MessageRegex.FindString(pod.Status.Message); ms != nil {
 		if !podPattern.MessageRegex.IsZero() {
-			diag += "[Message: " + *ms + "]"
+			matchedPod.Message = *ms
 		}
 	} else {
 		return nil
 	}
 
+	containers := GetAllContainerStatuses(pod)
 	for _, containerPattern := range podPattern.Containers {
-		if ms := matchContainers(pod, containerPattern); ms != nil {
-			if *ms != "" {
-				diag += "[Container: " + *ms + "]"
+		if mc := matchContainers(containers, containerPattern); mc != nil {
+			if !reflect.DeepEqual(*mc, ContainerCompletionStatus{}) {
+				matchedPod.Containers = append(matchedPod.Containers, mc)
 			}
 		} else {
 			return nil
 		}
 	}
 
-	return &diag
+	return common.PtrString(fmt.Sprintf(
+		"PodPattern matched: %v", common.ToJson(matchedPod)))
 }
 
 // Match ANY Container
-func matchContainers(pod *core.Pod, containerPattern *ContainerPattern) *string {
-	for _, container := range GetAllContainerStatuses(pod) {
-		if ms := matchContainerPattern(container, containerPattern); ms != nil {
-			return ms
+func matchContainers(
+	containers []core.ContainerStatus,
+	containerPattern *ContainerPattern) *ContainerCompletionStatus {
+	for _, container := range containers {
+		if mc := matchContainerPattern(container, containerPattern); mc != nil {
+			return mc
 		}
 	}
 
@@ -360,20 +361,21 @@ func matchContainers(pod *core.Pod, containerPattern *ContainerPattern) *string 
 
 // Match ENTIRE ContainerPattern
 func matchContainerPattern(
-	container core.ContainerStatus, containerPattern *ContainerPattern) *string {
-	diag := ""
+	container core.ContainerStatus,
+	containerPattern *ContainerPattern) *ContainerCompletionStatus {
 	term := container.State.Terminated
+	matchedContainer := ContainerCompletionStatus{}
 
 	if ms := containerPattern.NameRegex.FindString(container.Name); ms != nil {
 		if !containerPattern.NameRegex.IsZero() {
-			diag += "(Name: " + *ms + ")"
+			matchedContainer.Name = *ms
 		}
 	} else {
 		return nil
 	}
 	if ms := containerPattern.ReasonRegex.FindString(term.Reason); ms != nil {
 		if !containerPattern.ReasonRegex.IsZero() {
-			diag += "(Reason: " + *ms + ")"
+			matchedContainer.Reason = *ms
 		}
 	} else {
 		return nil
@@ -381,7 +383,7 @@ func matchContainerPattern(
 	if ms := containerPattern.MessageRegex.FindString(term.Message); ms != nil {
 		if !containerPattern.MessageRegex.IsZero() {
 			// Escape it in case multiple lines.
-			diag += "(Message: " + common.ToJson(*ms) + ")"
+			matchedContainer.Message = common.ToJson(*ms)
 		}
 	} else {
 		return nil
@@ -389,20 +391,20 @@ func matchContainerPattern(
 
 	if containerPattern.SignalRange.Contains(term.Signal) {
 		if !containerPattern.SignalRange.IsZero() {
-			diag += "(Signal: " + fmt.Sprint(term.Signal) + ")"
+			matchedContainer.Signal = term.Signal
 		}
 	} else {
 		return nil
 	}
 	if containerPattern.CodeRange.Contains(term.ExitCode) {
 		if !containerPattern.CodeRange.IsZero() {
-			diag += "(ExitCode: " + fmt.Sprint(term.ExitCode) + ")"
+			matchedContainer.Code = term.ExitCode
 		}
 	} else {
 		return nil
 	}
 
-	return &diag
+	return &matchedContainer
 }
 
 func generatePodUnmatchedResult(pod *core.Pod) PodMatchResult {
@@ -410,26 +412,19 @@ func generatePodUnmatchedResult(pod *core.Pod) PodMatchResult {
 	// info as Diagnostics.
 	lastContainerExitCode := common.NilInt32()
 	lastContainerCompletionTime := time.Time{}
-	diag := fmt.Sprintf(
-		"[Reason: %v, Message: %v]",
-		pod.Status.Reason, pod.Status.Message)
-
 	for _, containerStatus := range GetAllContainerStatuses(pod) {
-		terminated := containerStatus.State.Terminated
-		if terminated != nil && terminated.ExitCode != 0 {
-			diag += fmt.Sprintf(
-				"[Container: %v, ExitCode: %v, Signal: %v, Reason: %v, Message: %v]",
-				containerStatus.Name, terminated.ExitCode, terminated.Signal,
-				terminated.Reason, common.ToJson(terminated.Message))
-
-			if lastContainerExitCode == nil ||
-				lastContainerCompletionTime.Before(terminated.FinishedAt.Time) {
-				lastContainerExitCode = &terminated.ExitCode
-				lastContainerCompletionTime = terminated.FinishedAt.Time
+		term := containerStatus.State.Terminated
+		if term != nil {
+			if term.ExitCode != 0 && (lastContainerExitCode == nil ||
+				lastContainerCompletionTime.Before(term.FinishedAt.Time)) {
+				lastContainerExitCode = &term.ExitCode
+				lastContainerCompletionTime = term.FinishedAt.Time
 			}
 		}
 	}
 
+	unmatchedPod := ExtractPodCompletionStatus(pod)
+	diag := fmt.Sprintf("PodPattern unmatched: %v", common.ToJson(unmatchedPod))
 	if lastContainerExitCode == nil {
 		return PodMatchResult{
 			CodeInfo:    completionCodeInfoMap[CompletionCodePodFailedWithoutFailedContainer],

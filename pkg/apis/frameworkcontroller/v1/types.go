@@ -269,9 +269,9 @@ type FrameworkAttemptStatus struct {
 	// It will never be changed during the whole lifetime of a specific Framework.
 	ConfigMapName string `json:"configMapName"`
 	// ConfigMapUID can also universally locate the FrameworkAttemptInstance.
-	ConfigMapUID     *types.UID        `json:"configMapUID"`
-	CompletionStatus *CompletionStatus `json:"completionStatus"`
-	TaskRoleStatuses []*TaskRoleStatus `json:"taskRoleStatuses"`
+	ConfigMapUID     *types.UID                        `json:"configMapUID"`
+	CompletionStatus *FrameworkAttemptCompletionStatus `json:"completionStatus"`
+	TaskRoleStatuses []*TaskRoleStatus                 `json:"taskRoleStatuses"`
 }
 
 type TaskRoleStatus struct {
@@ -315,10 +315,10 @@ type TaskAttemptStatus struct {
 	// It will never be changed during the whole lifetime of a specific Task.
 	PodName string `json:"podName"`
 	// PodUID can also universally locate the TaskAttemptInstance.
-	PodUID           *types.UID        `json:"podUID"`
-	PodIP            *string           `json:"podIP"`
-	PodHostIP        *string           `json:"podHostIP"`
-	CompletionStatus *CompletionStatus `json:"completionStatus"`
+	PodUID           *types.UID                   `json:"podUID"`
+	PodIP            *string                      `json:"podIP"`
+	PodHostIP        *string                      `json:"podHostIP"`
+	CompletionStatus *TaskAttemptCompletionStatus `json:"completionStatus"`
 }
 
 type RetryPolicyStatus struct {
@@ -352,11 +352,44 @@ type CompletionStatus struct {
 
 	// It is the summarized diagnostic information of the completion.
 	// Such as it will include the matched Pod fields specified in the PodPattern,
-	// if the CompletionCodeInfo is generated from the PodPattern
-	// matching.
-	// For detailed and structured diagnostic information, check its outer
-	// embedding type.
+	// if the CompletionCodeInfo is generated from the PodPattern matching.
+	// For detailed and structured diagnostic information, check its outer embedding
+	// type.
 	Diagnostics string `json:"diagnostics"`
+}
+
+type PodCompletionStatus struct {
+	Reason     string                       `json:"reason,omitempty"`
+	Message    string                       `json:"message,omitempty"`
+	Containers []*ContainerCompletionStatus `json:"containers,omitempty"`
+}
+
+type ContainerCompletionStatus struct {
+	Name    string `json:"name,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
+	Signal  int32  `json:"signal,omitempty"`
+	Code    int32  `json:"code,omitempty"`
+}
+
+type TaskAttemptCompletionStatus struct {
+	// Summary
+	*CompletionStatus `json:",inline"`
+	// Detail
+	Pod *PodCompletionStatus `json:"pod,omitempty"`
+}
+
+type CompletionPolicyTriggerStatus struct {
+	Message      string `json:"message,omitempty"`
+	TaskRoleName string `json:"taskRoleName,omitempty"`
+	TaskIndex    int32  `json:"taskIndex,omitempty"`
+}
+
+type FrameworkAttemptCompletionStatus struct {
+	// Summary
+	*CompletionStatus `json:",inline"`
+	// Detail
+	Trigger *CompletionPolicyTriggerStatus `json:"trigger,omitempty"`
 }
 
 type CompletionCode int32
