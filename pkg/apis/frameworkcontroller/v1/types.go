@@ -91,9 +91,15 @@ type Framework struct {
 type FrameworkSpec struct {
 	Description string `json:"description"`
 	// Only support to update from ExecutionStart to ExecutionStop
-	ExecutionType ExecutionType   `json:"executionType"`
-	RetryPolicy   RetryPolicySpec `json:"retryPolicy"`
-	TaskRoles     []*TaskRoleSpec `json:"taskRoles"`
+	ExecutionType     ExecutionType   `json:"executionType"`
+	RetryPolicy       RetryPolicySpec `json:"retryPolicy"`
+	TaskRoles         []*TaskRoleSpec `json:"taskRoles"`
+	// kube batch gang scheduling minNumber
+	MinMember 		  int32 		  `json:"minMember,omitempty"`
+	// kube batch queue name
+	Queue             string          `json:"queue,omitempty"`
+	// framework priorityClass
+	PriorityClassName string          `json:"priorityClassName,omitempty"`
 }
 
 type TaskRoleSpec struct {
