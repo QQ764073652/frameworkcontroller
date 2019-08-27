@@ -121,7 +121,6 @@ var DefaultKubeConfigFilePath = os.Getenv("HOME") + "/.kube/config"
 ///////////////////////////////////////////////////////////////////////////////////////
 // CompletionCodeInfos
 ///////////////////////////////////////////////////////////////////////////////////////
-// +k8s:deepcopy-gen=false
 // Represent [Min, Max].
 type CompletionCodeRange struct {
 	Min CompletionCode
@@ -282,13 +281,11 @@ func AppendCompletionCodeInfos(codeInfos []*CompletionCodeInfo) {
 	}
 }
 
-// +k8s:deepcopy-gen=false
 type PodMatchResult struct {
 	CodeInfo    *CompletionCodeInfo
 	Diagnostics string
 }
 
-// +k8s:deepcopy-gen=false
 type PodMatchDiagnostics struct {
 	Name                string `json:"name,omitempty"`
 	PodCompletionStatus `json:",inline"`
