@@ -96,6 +96,8 @@ type Config struct {
 	// 4. The snapshot triggered by deletion may be missed to log during the
 	//    FrameworkController downtime.
 	LogObjectSnapshot LogObjectSnapshot `yaml:"logObjectSnapshot"`
+	// add bool EnableKubeBatch
+	EnableKubeBatch *bool `yaml:"enableKubeBatch"`
 }
 
 type LogObjectSnapshot struct {
@@ -156,6 +158,9 @@ func NewConfig() *Config {
 	}
 	if c.LogObjectSnapshot.Pod.OnPodDeletion == nil {
 		c.LogObjectSnapshot.Pod.OnPodDeletion = common.PtrBool(true)
+	}
+	if c.EnableKubeBatch == nil {
+		c.EnableKubeBatch = common.PtrBool(true)
 	}
 
 	// Validation
